@@ -1,43 +1,39 @@
-# Build stage
+# ======= Stage 1: Build ứng dụng React =======
 FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-# Copy environment file
-COPY .env ./
-
-# Copy package files
+# Khởi tạo package và cài thư viện
 COPY package*.json ./
-COPY tailwind.config.js ./
-COPY postcss.config.js ./
-
-# Install dependencies
 RUN npm install
 
-# Copy source code
-COPY public ./public
-COPY src ./src
+# Copy toàn bộ src và public vào container
+COPY . .
 
-# Build the React app
+# Build dự án (thư mục /app/build)
+# Quá trình này sẽ sử dụng biến môi trường mặc định nếu không truyền
 RUN npm run build
 
-# Production stage
+# ======= Stage 2: Serve ứng dụng và truyền biến Runtime =======
 FROM node:20-alpine
 
 WORKDIR /app
 
-# Install serve to run the production build
+# Cài đặt serve để chạy web tĩnh
 RUN npm install -g serve
 
-# Copy built app from builder stage
+# Copy sản phẩm từ bước build sang
 COPY --from=builder /app/build ./build
 
-# Expose port
+# Copy file kịch bản inject biến môi trường
+COPY entrypoint.sh ./entrypoint.sh
+RUN chmod +x ./entrypoint.sh
+
+# Mở cổng 3001
 EXPOSE 3001
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD wget --quiet --tries=1 --spider http://localhost:3001 || exit 1
+# Chạy shell script lấy biến môi trường Hệ điều hành đè vào env-config.js
+ENTRYPOINT ["./entrypoint.sh"]
 
-# Start the app
+# Chạy serve cổng 3001
 CMD ["serve", "-s", "build", "-l", "3001"]

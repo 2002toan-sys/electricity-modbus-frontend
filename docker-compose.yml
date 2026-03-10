@@ -1,0 +1,24 @@
+version: '3.8'
+
+services:
+  modbus-frontend:
+    # Trỏ về image trên Docker Hub tải về tự động (khi mang sang máy khác)
+    # image: nguyenvietanh10326/hotel-modbus-frontend:latest
+    
+    # 2. Hoặc mở comment để tự Build ngay tại máy (dùng source code hiện tại)
+    build: 
+      context: .
+      dockerfile: Dockerfile
+
+    container_name: modbus_frontend_app
+    ports:
+      # Expose port mạng ngoài là 3001, port container là 3001
+      - "3001:3001"
+    
+    restart: unless-stopped
+    
+    environment:
+      # Điền biến môi trường API_BASE và SOCKET_URL của máy chủ thật vào đây
+      # Lệnh entrypoint.sh sẽ tự nhúng IP này vào mã nguồn React lúc khởi chạy (Runtime)
+      - REACT_APP_API_BASE=http://localhost:3000/api
+      - REACT_APP_SOCKET_URL=http://localhost:3000
