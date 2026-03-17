@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { LogOut } from 'lucide-react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { LogOut, RefreshCw } from 'lucide-react';
 import { io } from 'socket.io-client';
 import { Toaster, toast } from 'react-hot-toast';
 
@@ -7,7 +7,7 @@ import Login from './Login';
 import api from './services/api';
 import RoomCard from './components/RoomCard';
 import NotificationPanel from './components/NotificationPanel';
-import { ROOM_NAMES } from './utils/constants';
+
 
 // ========================= Component chính =========================
 function App() {
@@ -62,6 +62,11 @@ function App() {
     setNotifications([]);
   };
 
+  // Làm mới ứng dụng thủ công
+  const handleManualRefresh = () => {
+    window.location.reload();
+  };
+
   // ===== Socket.IO Connection =====
   useEffect(() => {
     if (!user) return;
@@ -101,11 +106,13 @@ function App() {
             stateName: remoteRoomState?.stateName ?? room.stateName,
             x_input: typeof remoteRoomState?.x_input !== 'undefined' ? remoteRoomState.x_input : room.x_input,
             timestamp: remoteRoomState?.timestamp ?? room.timestamp,
-            // Update coil statuses preferring persisted coil state, fallback to PLC outputs
-            mainStatus: remoteCoilState ? (remoteCoilState.y_output_main || false) : (remoteRoomState ? (remoteRoomState.y_output_main || false) : room.mainStatus),
-            subStatus: remoteCoilState ? (remoteCoilState.y_output_sub || false) : (remoteRoomState ? (remoteRoomState.y_output_sub || false) : room.subStatus)
+            // Update coil statuses preferring the actual polled output (remoteRoomState) to guarantee true feedback
+            mainStatus: remoteRoomState?.y_output_main ?? (remoteCoilState?.y_output_main ?? room.mainStatus),
+            subStatus: remoteRoomState?.y_output_sub ?? (remoteCoilState?.y_output_sub ?? room.subStatus)
           };
         });
+        // Không filter ở đây — danh sách phòng đã được filter khi loadRooms()
+        // Filter lại mỗi socket event sẽ loại bỏ phòng nếu dữ liệu thiếu
       });
     });
 
@@ -180,7 +187,14 @@ function App() {
     try {
       setLoading(true);
       const data = await api.getRoomStates();
-      setRooms(data);
+      // Chỉ lấy phòng có đuôi 01-06 (201→206, 301→306, ..., 701→706)
+      const filteredRooms = data
+        .filter(r => {
+          const suffix = parseInt(r.room.toString().slice(-2));
+          return suffix >= 1 && suffix <= 6;
+        })
+        .sort((a, b) => parseInt(a.room) - parseInt(b.room));
+      setRooms(filteredRooms);
     } catch (error) {
       console.error('Lỗi tải dữ liệu:', error);
       toast.error('Lỗi khi tải dữ liệu phòng');
@@ -189,21 +203,24 @@ function App() {
     }
   };
 
-  const toggleMainRelay = async (roomNumber, newStatus) => {
+  // useCallback để giữ nguyên reference — tránh React.memo trên RoomCard bị vô hiệu hóa
+  const toggleMainRelay = useCallback(async (roomNumber, newStatus) => {
     try {
       await api.setMainRelay([{ room: roomNumber.toString(), set: newStatus ? 'on' : 'off' }]);
     } catch (error) {
       toast.error("Bạn không có quyền thực hiện thao tác này");
+      throw error; // Re-throw để RoomCard có thể rollback optimistic state
     }
-  };
+  }, []);
 
-  const toggleSubRelay = async (roomNumber, newStatus) => {
+  const toggleSubRelay = useCallback(async (roomNumber, newStatus) => {
     try {
       await api.setSubRelay([{ room: roomNumber.toString(), set: newStatus ? 'on' : 'off' }]);
     } catch (error) {
-      toast.error("Bạn phải in thẻ phòng " + ROOM_NAMES[roomNumber] + " trước khi thực hiện thao tác này");
+      toast.error("Bạn phải in thẻ phòng " + roomNumber + " trước khi thực hiện thao tác này");
+      throw error; // Re-throw để RoomCard có thể rollback optimistic state
     }
-  };
+  }, []);
 
   const markAsRead = async (id) => {
     try {
@@ -227,31 +244,28 @@ function App() {
     if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission();
   }, []);
 
+  // ===== Nhóm phòng theo tầng =====
+  // useMemo: chỉ tính lại khi danh sách phòng thay đổi
+  // ⚠️ Phải đặt TRƯỚC conditional return để tuân thủ Rules of Hooks
+  const floors = useMemo(() => {
+    const result = {};
+    rooms.forEach((room) => {
+      // Backend key là số phòng thực (201, 301...) — lấy chữ số đầu làm số tầng
+      const floorNum = parseInt(room.room.toString().charAt(0), 10);
+      if (!result[floorNum]) result[floorNum] = [];
+      result[floorNum].push(room);
+    });
+    // Sắp xếp phòng trong mỗi tầng theo số phòng
+    Object.values(result).forEach(list =>
+      list.sort((a, b) => parseInt(a.room) - parseInt(b.room))
+    );
+    return result;
+  }, [rooms]);
+
   // Nếu chưa đăng nhập, hiển thị trang login
   if (!user) {
     return <Login onLoginSuccess={handleLoginSuccess} />;
   }
-
-  // ===== Nhóm phòng theo tầng =====
-  const groupRoomsByFloor = (rooms) => {
-    const floors = {};
-    rooms.forEach((room) => {
-      const roomName = ROOM_NAMES[room.room] || room.room.toString();
-      const floorNum = parseInt(roomName.toString().charAt(0), 10);
-      if (!floors[floorNum]) floors[floorNum] = [];
-      floors[floorNum].push(room);
-    });
-    Object.keys(floors).forEach((floor) =>
-      floors[floor].sort((a, b) => {
-        const ra = parseInt(ROOM_NAMES[a.room] || a.room);
-        const rb = parseInt(ROOM_NAMES[b.room] || b.room);
-        return ra - rb;
-      })
-    );
-    return floors;
-  };
-
-  const floors = groupRoomsByFloor(rooms);
 
   if (loading) {
     return (
@@ -285,6 +299,16 @@ function App() {
                     <span className="text-sm text-red-700 font-semibold tracking-wide">Mất kết nối</span>
                   </span>
                 )}
+                
+                {/* Nút Tải lại đặt ở đây cho xa nút Đăng xuất */}
+                <button
+                  onClick={handleManualRefresh}
+                  className="inline-flex items-center px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-600 border border-blue-200 rounded-lg text-sm font-semibold transition-all duration-200 hover:shadow-sm gap-2"
+                  title="Tải lại trang"
+                >
+                  <RefreshCw className="w-4 h-4" />
+                  <span>Tải lại</span>
+                </button>
               </div>
             </div>
 
