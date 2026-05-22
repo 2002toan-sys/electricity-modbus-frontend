@@ -3,15 +3,13 @@ const API_BASE = window._env_?.REACT_APP_API_BASE || process.env.REACT_APP_API_B
 const api = {
   getHeaders() {
     return {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${localStorage.getItem('authToken') || ''}`,
+      'Content-Type': 'application/json'
     };
   },
 
   handleAuthError() {
     // Auto logout on 401 Unauthorized
     localStorage.removeItem('user');
-    localStorage.removeItem('authToken');
     window.location.reload();
   },
 

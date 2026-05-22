@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { Lock, User, AlertCircle, PowerIcon } from 'lucide-react';
-
 const API_BASE = window._env_?.REACT_APP_API_BASE || process.env.REACT_APP_API_BASE || 'http://localhost:3000/api';
 
 function Login({ onLoginSuccess }) {
@@ -11,17 +10,21 @@ function Login({ onLoginSuccess }) {
   const [error, setError] = useState('');
 
   useEffect(() => {
+    // Migrate old saved credentials to just username if necessary
     const saved = localStorage.getItem('savedCredentials');
     if (saved) {
       try {
-        const { u, p } = JSON.parse(saved);
-        if (u && p) {
-          setUsername(u);
-          setPassword(p);
+        const parsed = JSON.parse(saved);
+        if (parsed.u) {
+          setUsername(parsed.u);
           setRememberMe(true);
         }
       } catch (e) {
-        console.error('Lỗi đọc mật khẩu:', e);
+        // Not JSON or just a string
+        if (saved && !saved.startsWith('{')) {
+          setUsername(saved);
+          setRememberMe(true);
+        }
       }
     }
   }, []);
@@ -32,30 +35,26 @@ function Login({ onLoginSuccess }) {
     setError('');
 
     try {
+      let data;
+
+      // ---- Real login ----
       const response = await fetch(`${API_BASE}/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password }),
-        credentials: 'include', // Gửi cookies (session)
+        body: JSON.stringify({ username, password, rememberMe }),
+        credentials: 'include',
       });
+      data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Đăng nhập thất bại');
 
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Đăng nhập thất bại');
-      }
-
-      // Lưu tuỳ chọn Nhớ mật khẩu
       if (rememberMe) {
-        localStorage.setItem('savedCredentials', JSON.stringify({ u: username, p: password }));
+        // Only save username to avoid XSS stealing password
+        localStorage.setItem('savedCredentials', username);
       } else {
         localStorage.removeItem('savedCredentials');
       }
 
-      // Lưu thông tin user vào localStorage
       localStorage.setItem('user', JSON.stringify(data.user));
-      localStorage.setItem('authToken', Date.now().toString()); // Simple token
-
       onLoginSuccess(data.user);
     } catch (error) {
       setError(error.message);
@@ -146,8 +145,8 @@ function Login({ onLoginSuccess }) {
             type="submit"
             disabled={loading}
             className={`w-full py-2 px-4 rounded-lg font-semibold text-white transition-all ${loading
-                ? 'bg-gray-400 cursor-not-allowed'
-                : 'bg-blue-500 hover:bg-blue-600 active:scale-95'
+              ? 'bg-gray-400 cursor-not-allowed'
+              : 'bg-blue-500 hover:bg-blue-600 active:scale-95'
               }`}
           >
             {loading ? 'Đang đăng nhập...' : 'Đăng nhập'}
