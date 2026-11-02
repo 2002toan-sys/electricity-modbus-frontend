@@ -8,6 +8,7 @@ import realApi from './services/api';
 import NotificationPanel from './components/NotificationPanel';
 import Sidebar from './components/Sidebar';
 import DashboardPage from './components/DashboardPage';
+import HistoryPage from './components/HistoryPage';
 
 const api = realApi;
 
@@ -120,17 +121,16 @@ function App() {
       const stateName = room?.stateName || notification.stateName || 'Không xác định';
 
       const newNotification = {
-        id: Date.now().toString(),
+        id: notification.id ? notification.id.toString() : Date.now().toString(),
         room: notification.room,
         message: displayMessage,
         stateName,
-        timestamp: new Date().toISOString(),
+        timestamp: notification.timestamp || new Date().toISOString(),
         read: false,
       };
 
-      api.saveNotification(newNotification).catch((err) => {
-        console.error('Error saving notification to backend:', err);
-      });
+      // Backend đã tự động lưu thông báo vào SQLite Database,
+      // Frontend không gọi api.saveNotification để tránh nhân bản dữ liệu khi nhiều tab mở.
 
       if ('Notification' in window && Notification.permission === 'granted') {
         new Notification('🏨 Thông báo trạng thái phòng', {
@@ -146,7 +146,8 @@ function App() {
       }
 
       setNotifications((prev) => {
-        const updated = [newNotification, ...prev];
+        const filtered = prev.filter((n) => n.id !== newNotification.id);
+        const updated = [newNotification, ...filtered];
         return updated.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)).slice(0, 100);
       });
     });
@@ -323,6 +324,10 @@ function App() {
               onToggleSub={toggleSubRelay}
               onRefresh={handleManualRefresh}
             />
+          )}
+
+          {activePage === 'history' && (
+            <HistoryPage rooms={rooms} />
           )}
 
           {activePage === 'notifications' && (

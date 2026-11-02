@@ -159,6 +159,35 @@ const api = {
       throw error;
     }
   },
+
+  async getStateHistory(params = {}) {
+    try {
+      const query = new URLSearchParams();
+      if (params.room && params.room !== 'all') query.append('room', params.room);
+      if (params.startDate) query.append('startDate', params.startDate);
+      if (params.endDate) query.append('endDate', params.endDate);
+      if (params.state && params.state !== 'all') query.append('state', params.state);
+      if (params.page) query.append('page', params.page);
+      if (params.limit) query.append('limit', params.limit);
+
+      const url = `${API_BASE}/monitor/history?${query.toString()}`;
+      const response = await fetch(url, {
+        headers: this.getHeaders(),
+        credentials: 'include',
+      });
+
+      if (response.status === 401) {
+        this.handleAuthError();
+        return { data: [], pagination: { total: 0, page: 1, totalPages: 1 } };
+      }
+
+      if (!response.ok) throw new Error('Failed to fetch history');
+      return await response.json();
+    } catch (error) {
+      console.error('API Error (getStateHistory):', error);
+      return { data: [], pagination: { total: 0, page: 1, totalPages: 1 } };
+    }
+  },
 };
 
 export default api;

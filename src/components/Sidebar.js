@@ -2,6 +2,7 @@ import React from 'react';
 import {
   LayoutDashboard,
   Bell,
+  History,
   LogOut,
   ChevronLeft,
   ChevronRight,
@@ -11,6 +12,7 @@ import {
 
 const NAV_ITEMS = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { id: 'history', label: 'Lịch sử', icon: History },
   { id: 'notifications', label: 'Thông báo', icon: Bell },
 ];
 
