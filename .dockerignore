@@ -4,6 +4,8 @@ build
 .npm
 npm-debug.log
 .env
+.env.*
+!.env.example
 Dockerfile
 docker-compose.yml
 .dockerignore

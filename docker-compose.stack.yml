@@ -1,0 +1,41 @@
+services:
+  backend:
+    image: nguyenvietanh10326/hotel-modbus-backend:v11
+    ports:
+      - "3000:3000"
+    restart: unless-stopped
+    environment:
+      NODE_ENV: ${NODE_ENV}
+      JWT_SECRET: ${JWT_SECRET}
+      API_KEY: ${API_KEY}
+      LOG_TO_FILE: ${LOG_TO_FILE}
+      LOG_LEVEL: ${LOG_LEVEL}
+    volumes:
+      - "${BACKEND_DATA_DIR}:/app/data"
+      - "${BACKEND_LOGS_DIR}:/app/logs"
+    networks:
+      - hotel-network
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: any
+
+  frontend:
+    image: nguyenvietanh10326/hotel-modbus-frontend:v11
+    ports:
+      - "3001:3001"
+    restart: unless-stopped
+    environment:
+      REACT_APP_API_BASE: ${REACT_APP_API_BASE}
+      REACT_APP_SOCKET_URL: ${REACT_APP_SOCKET_URL}
+    networks:
+      - hotel-network
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: any
+
+networks:
+  hotel-network:
+    external: true
+    name: my_global_network

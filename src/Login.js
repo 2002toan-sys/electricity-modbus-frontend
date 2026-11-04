@@ -5,25 +5,25 @@ const API_BASE = window._env_?.REACT_APP_API_BASE || process.env.REACT_APP_API_B
 function Login({ onLoginSuccess }) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const [rememberMe, setRememberMe] = useState(false);
+  const [rememberUsername, setRememberUsername] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
   useEffect(() => {
-    // Migrate old saved credentials to just username if necessary
+    // Migrate previously saved credentials to username only.
     const saved = localStorage.getItem('savedCredentials');
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
         if (parsed.u) {
           setUsername(parsed.u);
-          setRememberMe(true);
+          setRememberUsername(true);
         }
       } catch (e) {
         // Not JSON or just a string
         if (saved && !saved.startsWith('{')) {
           setUsername(saved);
-          setRememberMe(true);
+          setRememberUsername(true);
         }
       }
     }
@@ -35,25 +35,25 @@ function Login({ onLoginSuccess }) {
     setError('');
 
     try {
-      let data;
-
-      // ---- Real login ----
       const response = await fetch(`${API_BASE}/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password, rememberMe }),
-        credentials: 'include',
+        body: JSON.stringify({ username, password }),
       });
-      data = await response.json();
+      const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'Đăng nhập thất bại');
+      if (!data.accessToken || !data.user?.username || !data.user?.role) {
+        throw new Error('Backend trả về dữ liệu đăng nhập không hợp lệ.');
+      }
 
-      if (rememberMe) {
+      if (rememberUsername) {
         // Only save username to avoid XSS stealing password
         localStorage.setItem('savedCredentials', username);
       } else {
         localStorage.removeItem('savedCredentials');
       }
 
+      sessionStorage.setItem('accessToken', data.accessToken);
       localStorage.setItem('user', JSON.stringify(data.user));
       onLoginSuccess(data.user);
     } catch (error) {
@@ -131,12 +131,12 @@ function Login({ onLoginSuccess }) {
             <input
               id="remember-me"
               type="checkbox"
-              checked={rememberMe}
-              onChange={(e) => setRememberMe(e.target.checked)}
+              checked={rememberUsername}
+              onChange={(e) => setRememberUsername(e.target.checked)}
               className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded cursor-pointer"
             />
             <label htmlFor="remember-me" className="ml-2 block text-sm font-medium text-gray-700 cursor-pointer">
-              Ghi nhớ đăng nhập
+              Ghi nhớ tên đăng nhập
             </label>
           </div>
 

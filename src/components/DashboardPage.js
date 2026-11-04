@@ -5,10 +5,10 @@ import RoomCard from './RoomCard';
 // Stat card configs — only 5 states
 const STAT_CONFIGS = [
   { state: 'Trống',     bg: 'bg-green-50',  border: 'border-green-200',  text: 'text-green-700',  dot: 'bg-green-500' },
-  { state: 'Check-in',  bg: 'bg-blue-50',   border: 'border-blue-200',   text: 'text-blue-700',   dot: 'bg-blue-500' },
-  { state: 'Vào phòng', bg: 'bg-red-50',    border: 'border-red-200',    text: 'text-red-700',    dot: 'bg-red-500' },
-  { state: 'Dùng thẻ',  bg: 'bg-yellow-50', border: 'border-yellow-200', text: 'text-yellow-700', dot: 'bg-yellow-500' },
-  { state: 'Sửa chữa',  bg: 'bg-gray-50',   border: 'border-gray-200',   text: 'text-gray-600',   dot: 'bg-gray-500' },
+  { state: 'Chờ khách', bg: 'bg-blue-50',   border: 'border-blue-200',   text: 'text-blue-700',   dot: 'bg-blue-500' },
+  { state: 'Có khách',  bg: 'bg-red-50',    border: 'border-red-200',    text: 'text-red-700',    dot: 'bg-red-500' },
+  { state: 'Bật cưỡng bức', bg: 'bg-yellow-50', border: 'border-yellow-200', text: 'text-yellow-700', dot: 'bg-yellow-500' },
+  { state: 'Bảo trì',   bg: 'bg-gray-50',   border: 'border-gray-200',   text: 'text-gray-600',   dot: 'bg-gray-500' },
 ];
 
 const DashboardPage = ({ rooms, floors, onToggleMain, onToggleSub, onRefresh }) => {

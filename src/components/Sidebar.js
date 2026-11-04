@@ -8,12 +8,14 @@ import {
   ChevronRight,
   X,
   Building2,
+  Settings,
 } from 'lucide-react';
 
 const NAV_ITEMS = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { id: 'history', label: 'Lịch sử', icon: History },
   { id: 'notifications', label: 'Thông báo', icon: Bell },
+  { id: 'settings', label: 'Cài đặt', icon: Settings, adminOnly: true },
 ];
 
 const Sidebar = ({
@@ -31,6 +33,7 @@ const Sidebar = ({
 }) => {
   const sidebarContent = (isMobileDrawer = false) => {
     const showLabels = !collapsed || isMobileDrawer;
+    const navItems = NAV_ITEMS.filter(({ adminOnly }) => !adminOnly || user?.role === 'admin');
 
     return (
       <div className="flex flex-col h-full bg-white border-r border-slate-200 text-slate-700">
@@ -106,7 +109,7 @@ const Sidebar = ({
 
         {/* ===== NAVIGATION TABS ===== */}
         <nav className="flex-1 px-2 py-3 space-y-0.5 overflow-y-auto">
-          {NAV_ITEMS.map(({ id, label, icon: Icon }) => {
+          {navItems.map(({ id, label, icon: Icon }) => {
             const isActive = activePage === id;
             const showBadge = id === 'notifications' && unreadCount > 0;
             return (
@@ -149,7 +152,19 @@ const Sidebar = ({
         {/* ===== BOTTOM: USER + LOGOUT ===== */}
         <div className="border-t border-slate-100 px-2 py-3 space-y-1">
           {showLabels ? (
-            <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-50">
+            <button
+              type="button"
+              onClick={() => {
+                onNavigate('changePassword');
+                if (isMobileDrawer) onMobileClose();
+              }}
+              className={`flex w-full items-center gap-2 px-3 py-2 rounded-xl text-left transition-colors ${
+                activePage === 'changePassword'
+                  ? 'bg-blue-50 text-blue-700'
+                  : 'bg-slate-50 hover:bg-slate-100'
+              }`}
+              title="Đổi mật khẩu"
+            >
               <div className="w-7 h-7 rounded-full bg-blue-600 flex items-center justify-center text-xs font-bold text-white flex-shrink-0">
                 {user?.username?.charAt(0)?.toUpperCase() || '?'}
               </div>
@@ -157,15 +172,24 @@ const Sidebar = ({
                 <div className="text-sm font-semibold text-slate-700 truncate">{user?.username}</div>
                 <div className="text-xs text-blue-500 uppercase tracking-wide truncate">{user?.role}</div>
               </div>
-            </div>
+            </button>
           ) : (
             <div className="flex justify-center py-1">
-              <div
-                className="w-7 h-7 rounded-full bg-blue-600 flex items-center justify-center text-xs font-bold text-white"
-                title={`${user?.username} (${user?.role})`}
+              <button
+                type="button"
+                onClick={() => onNavigate('changePassword')}
+                className={`w-9 h-9 rounded-xl flex items-center justify-center transition-colors ${
+                  activePage === 'changePassword'
+                    ? 'bg-blue-50'
+                    : 'hover:bg-slate-100'
+                }`}
+                title="Đổi mật khẩu"
+                aria-label={`Hồ sơ ${user?.username}; đổi mật khẩu`}
               >
-                {user?.username?.charAt(0)?.toUpperCase() || '?'}
-              </div>
+                <span className="w-7 h-7 rounded-full bg-blue-600 flex items-center justify-center text-xs font-bold text-white">
+                  {user?.username?.charAt(0)?.toUpperCase() || '?'}
+                </span>
+              </button>
             </div>
           )}
 

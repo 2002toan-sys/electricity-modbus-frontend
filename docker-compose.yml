@@ -1,9 +1,7 @@
-version: '3.8'
-
 services:
   modbus-frontend:
     # Image name on Docker Hub
-    image: nguyenvietanh10326/hotel-modbus-frontend:latest
+    image: nguyenvietanh10326/hotel-modbus-frontend:v11
     
     # Allows local building if the image is not found on Hub or for development
     build: 
@@ -19,5 +17,5 @@ services:
     
     environment:
       # Environment variables for Runtime injection via entrypoint.sh
-      - REACT_APP_API_BASE=http://localhost:3000/api
-      - REACT_APP_SOCKET_URL=http://localhost:3000
+      REACT_APP_API_BASE: ${REACT_APP_API_BASE}
+      REACT_APP_SOCKET_URL: ${REACT_APP_SOCKET_URL}

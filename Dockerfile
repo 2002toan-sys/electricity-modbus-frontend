@@ -42,6 +42,10 @@ RUN chmod +x ./entrypoint.sh
 # Mở cổng 3001
 EXPOSE 3001
 
+# Container health check for the static frontend server.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD node -e "fetch('http://127.0.0.1:3001').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
+
 # Khởi chạy ứng dụng
 ENTRYPOINT ["./entrypoint.sh"]
 CMD ["serve", "-s", "build", "-l", "3001"]

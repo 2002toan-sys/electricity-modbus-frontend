@@ -9,19 +9,40 @@ import NotificationPanel from './components/NotificationPanel';
 import Sidebar from './components/Sidebar';
 import DashboardPage from './components/DashboardPage';
 import HistoryPage from './components/HistoryPage';
+import SettingsPage from './components/SettingsPage';
+import ChangePasswordPage from './components/ChangePasswordPage';
 
 const api = realApi;
 
-// ========================= Component chính =========================
-function App() {
-  const [user, setUser] = useState(() => {
+function getSavedUser() {
+  try {
+    if (!sessionStorage.getItem('accessToken')) {
+      localStorage.removeItem('user');
+      return null;
+    }
     const savedUser = localStorage.getItem('user');
     return savedUser ? JSON.parse(savedUser) : null;
-  });
+  } catch (error) {
+    console.error('Unable to read saved user:', error);
+    localStorage.removeItem('user');
+    return null;
+  }
+}
+
+// ========================= Component chính =========================
+function App() {
+  const [user, setUser] = useState(getSavedUser);
+  const [authChecking, setAuthChecking] = useState(() => (
+    Boolean(sessionStorage.getItem('accessToken') && localStorage.getItem('user'))
+  ));
+  const [authCheckFailed, setAuthCheckFailed] = useState(false);
+  const [authCheckError, setAuthCheckError] = useState('');
+  const [authRetry, setAuthRetry] = useState(0);
   const [rooms, setRooms] = useState([]);
   const [notifications, setNotifications] = useState([]);
   const [loading, setLoading] = useState(true);
   const [connected, setConnected] = useState(false);
+  const [plcStatuses, setPlcStatuses] = useState({});
 
   // Sidebar state
   const [activePage, setActivePage] = useState('dashboard');
@@ -31,15 +52,142 @@ function App() {
   const wsRef = useRef(null);
   const roomsRef = useRef([]);
   const activePageRef = useRef(activePage);
+  const lastActivitySignalRef = useRef(0);
 
   // Keep refs in sync
   useEffect(() => { roomsRef.current = rooms; }, [rooms]);
   useEffect(() => { activePageRef.current = activePage; }, [activePage]);
 
+  useEffect(() => {
+    if (!user) {
+      setAuthChecking(false);
+      setAuthCheckFailed(false);
+      setAuthCheckError('');
+      return undefined;
+    }
+
+    let active = true;
+    let firstCheck = true;
+    let verificationInProgress = false;
+
+    const verifyToken = async () => {
+      if (verificationInProgress) return;
+      verificationInProgress = true;
+
+      try {
+        const result = await api.verifyToken();
+        if (!active) return;
+
+        if (!result.authenticated) {
+          sessionStorage.removeItem('accessToken');
+          localStorage.removeItem('user');
+          setUser(null);
+          return;
+        }
+
+        setUser((currentUser) => {
+          const verifiedUser = result.user;
+          if (currentUser?.username === verifiedUser.username &&
+              currentUser?.role === verifiedUser.role) {
+            return currentUser;
+          }
+          localStorage.setItem('user', JSON.stringify(verifiedUser));
+          return verifiedUser;
+        });
+        setAuthCheckFailed(false);
+        setAuthCheckError('');
+      } catch (error) {
+        if (!active) return;
+        console.error('Token verification failed:', error);
+        setAuthCheckError(error.message || 'Không thể xác thực token đăng nhập.');
+        if (firstCheck) setAuthCheckFailed(true);
+      } finally {
+        verificationInProgress = false;
+        if (active) {
+          firstCheck = false;
+          setAuthChecking(false);
+        }
+      }
+    };
+
+    const handleWindowFocus = () => {
+      if (document.visibilityState === 'visible') verifyToken();
+    };
+
+    verifyToken();
+    const intervalId = window.setInterval(verifyToken, 30000);
+    window.addEventListener('focus', handleWindowFocus);
+
+    return () => {
+      active = false;
+      window.clearInterval(intervalId);
+      window.removeEventListener('focus', handleWindowFocus);
+    };
+  }, [user, authRetry]);
+
+  useEffect(() => {
+    if (!user || authChecking || authCheckFailed) return undefined;
+
+    const handleActivity = () => {
+      if (document.visibilityState !== 'visible') return;
+
+      const now = Date.now();
+      if (now - lastActivitySignalRef.current < 60000) return;
+      lastActivitySignalRef.current = now;
+      api.recordActivity().then((authenticated) => {
+        if (!authenticated) {
+          sessionStorage.removeItem('accessToken');
+          localStorage.removeItem('user');
+          setUser(null);
+          setRooms([]);
+          setNotifications([]);
+          return;
+        }
+        if (wsRef.current) {
+          wsRef.current.emit('auth-refresh', sessionStorage.getItem('accessToken'));
+        }
+      }).catch((error) => {
+        console.error('Unable to record user activity:', error);
+      });
+    };
+
+    const activityEvents = ['pointerdown', 'pointermove', 'keydown', 'scroll', 'touchstart'];
+    activityEvents.forEach((eventName) => {
+      window.addEventListener(eventName, handleActivity, { passive: true });
+    });
+
+    return () => {
+      activityEvents.forEach((eventName) => {
+        window.removeEventListener(eventName, handleActivity);
+      });
+    };
+  }, [user, authChecking, authCheckFailed]);
+
+  const updatePlcStatuses = useCallback((statuses) => {
+    const entries = Object.entries(statuses || {});
+    setPlcStatuses(Object.fromEntries(entries.map(([key, status]) => {
+      const floor = status?.floor ?? key.replace(/^floor_/, '');
+      const isConnected = typeof status === 'boolean'
+        ? status
+        : Boolean(status?.connected ?? status?.tcpConnected);
+      return [floor, isConnected];
+    })));
+  }, []);
+
+  useEffect(() => {
+    if (!user || authChecking || authCheckFailed) {
+      setPlcStatuses({});
+      return;
+    }
+    api.getPlcStatus()
+      .then((result) => updatePlcStatuses(result.data))
+      .catch((error) => console.error('Error loading PLC status:', error));
+  }, [user, authChecking, authCheckFailed, updatePlcStatuses]);
+
   // Load notifications from backend when user logs in
   useEffect(() => {
-    if (user) loadNotifications();
-  }, [user]);
+    if (user && !authChecking && !authCheckFailed) loadNotifications();
+  }, [user, authChecking, authCheckFailed]);
 
   const loadNotifications = async () => {
     try {
@@ -56,11 +204,15 @@ function App() {
   const handleLoginSuccess = (userData) => {
     setUser(userData);
     localStorage.setItem('user', JSON.stringify(userData));
+    setAuthChecking(true);
+    setAuthCheckFailed(false);
+    setAuthCheckError('');
   };
 
   const handleLogout = async () => {
     await api.logout();
     localStorage.removeItem('user');
+    sessionStorage.removeItem('accessToken');
     setUser(null);
     setRooms([]);
     setNotifications([]);
@@ -72,7 +224,7 @@ function App() {
 
   // ===== Socket Connection =====
   useEffect(() => {
-    if (!user) return;
+    if (!user || authChecking || authCheckFailed) return;
 
     // ---- Real Socket.IO ----
     const apiBase = window._env_?.REACT_APP_API_BASE || process.env.REACT_APP_API_BASE;
@@ -80,6 +232,7 @@ function App() {
 
     const socket = io(socketBaseUrl, {
       path: '/socket.io/',
+      auth: (callback) => callback({ token: sessionStorage.getItem('accessToken') }),
       reconnection: true,
       reconnectionDelay: 1000,
       reconnectionDelayMax: 5000,
@@ -113,6 +266,10 @@ function App() {
           };
         })
       );
+    });
+
+    socket.on('plcStatus', (data) => {
+      updatePlcStatuses(data?.statuses);
     });
 
     socket.on('state-changed', (notification) => {
@@ -170,30 +327,38 @@ function App() {
     wsRef.current = socket;
     return () => socket.close();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user]);
+  }, [user, authChecking, authCheckFailed, updatePlcStatuses]);
 
   // ===== Load danh sách phòng =====
   useEffect(() => {
-    if (user) loadRooms();
-  }, [user]);
+    if (user && !authChecking && !authCheckFailed) loadRooms();
+  }, [user, authChecking, authCheckFailed]);
 
   const loadRooms = async () => {
     try {
       setLoading(true);
       const data = await api.getRoomStates();
-      const filteredRooms = data
-        .filter((r) => {
-          const suffix = parseInt(r.room.toString().slice(-2));
-          return suffix >= 1 && suffix <= 6;
-        })
-        .sort((a, b) => parseInt(a.room) - parseInt(b.room));
-      setRooms(filteredRooms);
+      const sortedRooms = data
+        .filter((room) => Number(room.show_in_ui ?? 1) === 1)
+        .sort((a, b) => (
+        Number(a.floor) - Number(b.floor) || Number(a.room) - Number(b.room)
+      ));
+      setRooms(sortedRooms);
     } catch (error) {
       console.error('Lỗi tải dữ liệu:', error);
       toast.error('Lỗi khi tải dữ liệu phòng');
     } finally {
       setLoading(false);
     }
+  };
+
+  const refreshRooms = async () => {
+    const data = await api.getRoomStates();
+    setRooms(data
+      .filter((room) => Number(room.show_in_ui ?? 1) === 1)
+      .sort((a, b) => (
+      Number(a.floor) - Number(b.floor) || Number(a.room) - Number(b.room)
+      )));
   };
 
   const toggleMainRelay = useCallback(async (roomNumber, newStatus) => {
@@ -243,7 +408,8 @@ function App() {
   const floors = useMemo(() => {
     const result = {};
     rooms.forEach((room) => {
-      const floorNum = parseInt(room.room.toString().charAt(0), 10);
+      const floorNum = room.floor;
+      if (floorNum == null) return;
       if (!result[floorNum]) result[floorNum] = [];
       result[floorNum].push(room);
     });
@@ -257,9 +423,49 @@ function App() {
     () => notifications.filter((n) => !n.read).length,
     [notifications]
   );
+  const allPlcsConnected = Object.values(plcStatuses).length > 0 &&
+    Object.values(plcStatuses).every(Boolean);
 
   // ===== Chưa đăng nhập =====
   if (!user) return <Login onLoginSuccess={handleLoginSuccess} />;
+
+  if (authChecking || authCheckFailed) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-4">
+        <div className="w-full max-w-md rounded-xl border border-slate-200 bg-white p-6 text-center shadow-sm">
+          {authChecking ? (
+            <>
+              <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-4 border-blue-500 border-t-transparent" />
+              <p role="status" className="text-sm text-slate-600">Đang xác thực token đăng nhập...</p>
+            </>
+          ) : (
+            <>
+              <h2 className="text-lg font-bold text-slate-800">Không thể xác thực phiên</h2>
+              <p role="alert" className="mt-2 text-sm text-red-600">
+                {authCheckError}
+              </p>
+              <div className="mt-5 flex justify-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setAuthRetry((retry) => retry + 1)}
+                  className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
+                >
+                  Thử lại
+                </button>
+                <button
+                  type="button"
+                  onClick={handleLogout}
+                  className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50"
+                >
+                  Đăng xuất
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   // ===== Loading =====
   if (loading) {
@@ -340,6 +546,16 @@ function App() {
                 />
               </div>
             </div>
+          )}
+
+          {activePage === 'changePassword' && <ChangePasswordPage />}
+
+          {activePage === 'settings' && user?.role === 'admin' && (
+            <SettingsPage
+              onRoomsChanged={refreshRooms}
+              plcStatuses={plcStatuses}
+              allPlcsConnected={allPlcsConnected}
+            />
           )}
         </main>
       </div>
