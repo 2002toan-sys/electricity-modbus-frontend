@@ -11,7 +11,14 @@ const STAT_CONFIGS = [
   { state: 'Bảo trì',   bg: 'bg-gray-50',   border: 'border-gray-200',   text: 'text-gray-600',   dot: 'bg-gray-500' },
 ];
 
-const DashboardPage = ({ rooms, floors, onToggleMain, onToggleSub, onRefresh }) => {
+const DashboardPage = ({
+  rooms,
+  floors,
+  canControlMainRelay,
+  onToggleMain,
+  onToggleSub,
+  onRefresh
+}) => {
   // Count rooms per state
   const stateCounts = useMemo(() => {
     const counts = {};
@@ -33,7 +40,7 @@ const DashboardPage = ({ rooms, floors, onToggleMain, onToggleSub, onRefresh }) 
     <div className="flex flex-col h-full overflow-y-auto">
       {/* Page header */}
       <div className="flex-shrink-0 px-4 py-3 bg-white border-b border-slate-200 flex justify-between items-center">
-        <h2 className="text-base font-bold text-slate-800">Dashboard</h2>
+        <h2 className="text-base font-bold text-slate-800">Sơ đồ</h2>
         <button
           onClick={onRefresh}
           title="Làm mới"
@@ -73,6 +80,7 @@ const DashboardPage = ({ rooms, floors, onToggleMain, onToggleSub, onRefresh }) 
                 stateName={room.stateName || 'Không xác định'}
                 mainStatus={room.mainStatus}
                 subStatus={room.subStatus}
+                canControlMain={canControlMainRelay}
                 onToggleMain={onToggleMain}
                 onToggleSub={onToggleSub}
               />

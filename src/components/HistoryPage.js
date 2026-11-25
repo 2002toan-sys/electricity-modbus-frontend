@@ -1,13 +1,11 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   History,
-  Filter,
   RotateCcw,
   ChevronLeft,
   ChevronRight,
   Loader2,
   Calendar,
-  Building,
   ArrowRight,
   Search
 } from 'lucide-react';
@@ -30,12 +28,12 @@ const getPageItems = (currentPage, totalPages) => {
   });
 };
 
-const HistoryPage = ({ rooms = [] }) => {
+const HistoryPage = () => {
   // Filter States
-  const [selectedRoom, setSelectedRoom] = useState('all');
   const [selectedState, setSelectedState] = useState('all');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
+  const [pageSize, setPageSize] = useState(15);
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
 
@@ -49,23 +47,28 @@ const HistoryPage = ({ rooms = [] }) => {
     total: 0,
     totalPages: 1
   });
+  const [dateError, setDateError] = useState('');
 
   const fetchHistory = useCallback(async (targetPage = 1, searchOverride = debouncedSearch) => {
+    if (startDate && endDate && startDate > endDate) {
+      setDateError('Ngày bắt đầu không được sau ngày kết thúc.');
+      return;
+    }
+    setDateError('');
     setLoading(true);
     try {
       const params = {
         page: targetPage,
-        limit: 15,
-        room: selectedRoom !== 'all' ? selectedRoom : undefined,
+        limit: pageSize,
         state: selectedState !== 'all' ? selectedState : undefined,
         search: searchOverride || undefined,
-        startDate: startDate ? `${startDate}T00:00:00.000Z` : undefined,
-        endDate: endDate ? `${endDate}T23:59:59.999Z` : undefined
+        startDate: startDate || undefined,
+        endDate: endDate || undefined
       };
 
       const res = await api.getStateHistory(params);
       setHistoryList(res.data || []);
-      setPagination(res.pagination || { page: targetPage, limit: 15, total: 0, totalPages: 1 });
+      setPagination(res.pagination || { page: targetPage, limit: pageSize, total: 0, totalPages: 1 });
       setPage(targetPage);
     } catch (err) {
       console.error('Lỗi tải lịch sử:', err);
@@ -73,7 +76,7 @@ const HistoryPage = ({ rooms = [] }) => {
     } finally {
       setLoading(false);
     }
-  }, [selectedRoom, selectedState, startDate, endDate, debouncedSearch]);
+  }, [selectedState, startDate, endDate, pageSize, debouncedSearch]);
 
   useEffect(() => {
     fetchHistory(1);
@@ -84,22 +87,14 @@ const HistoryPage = ({ rooms = [] }) => {
     return () => window.clearTimeout(timeoutId);
   }, [search]);
 
-  const handleApplyFilter = (e) => {
-    e.preventDefault();
-    setDebouncedSearch(search.trim());
-    fetchHistory(1, search.trim());
-  };
-
   const handleResetFilter = () => {
-    setSelectedRoom('all');
     setSelectedState('all');
     setStartDate('');
     setEndDate('');
+    setPageSize(15);
     setSearch('');
     setDebouncedSearch('');
   };
-
-  const roomOptions = [...new Set(rooms.map(r => r.room.toString()))].sort();
 
   return (
     <div className="flex flex-col h-full bg-slate-50 overflow-hidden">
@@ -118,109 +113,90 @@ const HistoryPage = ({ rooms = [] }) => {
 
       {/* Filter Bar */}
       <div className="bg-white border-b border-slate-200 px-4 py-3 shadow-sm flex-shrink-0">
-        <form onSubmit={handleApplyFilter}>
-          <label className="mb-3 block text-xs font-semibold text-slate-600">
-            Tìm trong lịch sử
+        <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-[minmax(220px,2fr)_minmax(150px,1fr)_minmax(145px,1fr)_minmax(145px,1fr)_minmax(130px,0.8fr)_auto] items-end">
+          <label htmlFor="history-search" className="block text-xs font-semibold text-slate-600">
+            Tìm kiếm
             <span className="relative mt-1 block">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
               <input
+                id="history-search"
                 type="search"
+                aria-label="Tìm trong lịch sử"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Tìm phòng, trạng thái, nội dung..."
-                className="w-full rounded-lg border border-slate-200 bg-slate-50 py-2 pl-9 pr-3 text-xs font-medium focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 pl-9 text-xs font-medium focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </span>
           </label>
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-2.5 items-end">
-              {/* Lọc phòng */}
-              <div>
-                <label htmlFor="history-room-filter" className="block text-xs font-semibold text-slate-600 mb-1 flex items-center gap-1">
-                  <Building className="w-3.5 h-3.5 text-slate-400" />
-                  Chọn phòng
-                </label>
-                <select
-                  id="history-room-filter"
-                  value={selectedRoom}
-                  onChange={(e) => setSelectedRoom(e.target.value)}
-                  className="w-full text-xs font-medium px-2.5 py-2 rounded-lg border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="all">Tất cả các phòng</option>
-                  {roomOptions.map((rm) => (
-                    <option key={rm} value={rm}>Phòng {rm}</option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Lọc trạng thái mới */}
-              <div>
-                <label htmlFor="history-state-filter" className="block text-xs font-semibold text-slate-600 mb-1 flex items-center gap-1">
-                  <Filter className="w-3.5 h-3.5 text-slate-400" />
-                  Trạng thái đến
-                </label>
-                <select
-                  id="history-state-filter"
-                  value={selectedState}
-                  onChange={(e) => setSelectedState(e.target.value)}
-                  className="w-full text-xs font-medium px-2.5 py-2 rounded-lg border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="all">Tất cả trạng thái</option>
-                  {ROOM_STATES.map(({ name }) => (
-                    <option key={name} value={name}>{name}</option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Từ ngày */}
-              <div>
-                <label htmlFor="history-start-date" className="block text-xs font-semibold text-slate-600 mb-1 flex items-center gap-1">
-                  <Calendar className="w-3.5 h-3.5 text-slate-400" />
-                  Từ ngày
-                </label>
-                <input
-                  id="history-start-date"
-                  type="date"
-                  value={startDate}
-                  onChange={(e) => setStartDate(e.target.value)}
-                  className="w-full text-xs font-medium px-2.5 py-1.5 rounded-lg border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-
-              {/* Đến ngày */}
-              <div>
-                <label htmlFor="history-end-date" className="block text-xs font-semibold text-slate-600 mb-1 flex items-center gap-1">
-                  <Calendar className="w-3.5 h-3.5 text-slate-400" />
-                  Đến ngày
-                </label>
-                <input
-                  id="history-end-date"
-                  type="date"
-                  value={endDate}
-                  onChange={(e) => setEndDate(e.target.value)}
-                  className="w-full text-xs font-medium px-2.5 py-1.5 rounded-lg border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-
-              {/* Nút lọc & Đặt lại */}
-              <div className="flex gap-2">
-                <button
-                  type="submit"
-                  className="flex-1 flex items-center justify-center gap-1 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs rounded-lg transition-colors shadow-sm"
-                >
-                  <Filter className="w-3.5 h-3.5" />
-                  Lọc
-                </button>
-                <button
-                  type="button"
-                  onClick={handleResetFilter}
-                  className="flex items-center justify-center gap-1 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 font-semibold text-xs rounded-lg transition-colors"
-                  title="Đặt lại bộ lọc"
-                >
-                  <RotateCcw className="w-3.5 h-3.5" />
-                </button>
-              </div>
-          </div>
-        </form>
+          <label htmlFor="history-state-filter" className="block text-xs font-semibold text-slate-600">
+            Trạng thái đến
+            <select
+              id="history-state-filter"
+              aria-label="Trạng thái đến"
+              value={selectedState}
+              onChange={(e) => setSelectedState(e.target.value)}
+              className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-2 text-xs font-medium focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="all">Tất cả trạng thái</option>
+              {ROOM_STATES.map(({ name }) => (
+                <option key={name} value={name}>{name}</option>
+              ))}
+            </select>
+          </label>
+          <label htmlFor="history-start-date" className="block text-xs font-semibold text-slate-600">
+            Từ ngày
+            <span className="relative mt-1 block">
+              <Calendar className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+              <input
+                id="history-start-date"
+                type="date"
+                value={startDate}
+                max={endDate || undefined}
+                onChange={(e) => setStartDate(e.target.value)}
+                className="w-full rounded-lg border border-slate-200 bg-slate-50 py-2 pl-8 pr-2 text-xs font-medium focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </span>
+          </label>
+          <label htmlFor="history-end-date" className="block text-xs font-semibold text-slate-600">
+            Đến ngày
+            <span className="relative mt-1 block">
+              <Calendar className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+              <input
+                id="history-end-date"
+                type="date"
+                value={endDate}
+                min={startDate || undefined}
+                onChange={(e) => setEndDate(e.target.value)}
+                className="w-full rounded-lg border border-slate-200 bg-slate-50 py-2 pl-8 pr-2 text-xs font-medium focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </span>
+          </label>
+          <label htmlFor="history-page-size" className="block text-xs font-semibold text-slate-600">
+            Số bản ghi
+            <select
+              id="history-page-size"
+              aria-label="Số bản ghi"
+              value={pageSize}
+              onChange={(e) => setPageSize(Number(e.target.value))}
+              className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-2 text-xs font-medium focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              {[10, 15, 25, 50, 100].map((size) => (
+                <option key={size} value={size}>{size} bản ghi</option>
+              ))}
+            </select>
+          </label>
+          <button
+            type="button"
+            onClick={handleResetFilter}
+            className="flex h-9 items-center justify-center rounded-lg border border-slate-200 bg-slate-100 px-3 text-slate-600 transition-colors hover:bg-slate-200"
+            aria-label="Đặt lại bộ lọc"
+            title="Đặt lại bộ lọc"
+          >
+            <RotateCcw className="h-4 w-4" />
+          </button>
+        </div>
+        {dateError && <p role="alert" className="mt-2 text-xs font-medium text-red-600">{dateError}</p>}
       </div>
 
       {/* Main Table Area */}
@@ -242,9 +218,9 @@ const HistoryPage = ({ rooms = [] }) => {
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="bg-slate-50/80 border-b border-slate-200 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                    <th className="py-3 px-4">Thời gian</th>
+                    <th className="py-3 px-4">Ngày</th>
+                    <th className="py-3 px-4">Giờ</th>
                     <th className="py-3 px-3">Phòng</th>
-                    <th className="py-3 px-3">Tầng</th>
                     <th className="py-3 px-4">Chuyển trạng thái</th>
                     <th className="py-3 px-4">Nội dung chi tiết</th>
                   </tr>
@@ -256,9 +232,25 @@ const HistoryPage = ({ rooms = [] }) => {
 
                     return (
                       <tr key={item.id} className="hover:bg-slate-50/70 transition-colors">
-                        {/* Thời gian */}
+                        {/* Ngày */}
                         <td className="py-3 px-4 whitespace-nowrap text-slate-500 font-medium">
-                          {new Date(item.timestamp).toLocaleString('vi-VN')}
+                          {new Intl.DateTimeFormat('vi-VN', {
+                            timeZone: 'Asia/Ho_Chi_Minh',
+                            day: '2-digit',
+                            month: '2-digit',
+                            year: 'numeric'
+                          }).format(new Date(item.timestamp))}
+                        </td>
+
+                        {/* Giờ */}
+                        <td className="py-3 px-4 whitespace-nowrap text-slate-500 font-medium">
+                          {new Date(item.timestamp).toLocaleTimeString('vi-VN', {
+                            timeZone: 'Asia/Ho_Chi_Minh',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                            second: '2-digit',
+                            hour12: false
+                          })}
                         </td>
 
                         {/* Phòng */}
@@ -266,11 +258,6 @@ const HistoryPage = ({ rooms = [] }) => {
                           <span className="font-bold text-slate-800 bg-slate-100 px-2.5 py-1 rounded-md border border-slate-200">
                             {item.room}
                           </span>
-                        </td>
-
-                        {/* Tầng */}
-                        <td className="py-3 px-3 whitespace-nowrap text-slate-500 font-medium">
-                          Tầng {item.floor || item.room?.toString()?.charAt(0)}
                         </td>
 
                         {/* Chuyển đổi trạng thái */}

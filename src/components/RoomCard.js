@@ -2,7 +2,15 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Power, Loader2 } from 'lucide-react';
 import { getStateColor } from '../utils/constants';
 
-const RoomCard = React.memo(({ room, stateName, mainStatus, subStatus, onToggleMain, onToggleSub }) => {
+const RoomCard = React.memo(({
+  room,
+  stateName,
+  mainStatus,
+  subStatus,
+  canControlMain = true,
+  onToggleMain,
+  onToggleSub
+}) => {
   // Backend trả room là số phòng thực (201, 302...) — dùng trực tiếp
   const displayName = room.toString();
 
@@ -80,10 +88,11 @@ const RoomCard = React.memo(({ room, stateName, mainStatus, subStatus, onToggleM
       <div className="p-2 flex gap-2">
         <button
           onClick={handleToggleMain}
-          disabled={isTogglingMain}
+          disabled={isTogglingMain || !canControlMain}
+          title={canControlMain ? undefined : 'Chỉ quản trị viên được điều khiển relay chính'}
           className={`flex-1 py-3 px-4 rounded-xl font-semibold text-base flex justify-center items-center
             ${localMain ? 'bg-white/60 shadow-white/70' : 'bg-white/20 shadow-white/30'}
-            ${isTogglingMain ? 'opacity-70 cursor-not-allowed' : 'hover:scale-105 hover:shadow-lg hover:-translate-y-1 active:scale-95'}
+            ${isTogglingMain ? 'opacity-70 cursor-not-allowed' : !canControlMain ? 'cursor-not-allowed' : 'hover:scale-105 hover:shadow-lg hover:-translate-y-1 active:scale-95'}
             transition-all duration-200
           `}
         >
@@ -121,6 +130,7 @@ const RoomCard = React.memo(({ room, stateName, mainStatus, subStatus, onToggleM
     prevProps.subStatus === nextProps.subStatus &&
     prevProps.stateName === nextProps.stateName &&
     prevProps.room === nextProps.room &&
+    prevProps.canControlMain === nextProps.canControlMain &&
     prevProps.onToggleMain === nextProps.onToggleMain &&
     prevProps.onToggleSub === nextProps.onToggleSub
   );

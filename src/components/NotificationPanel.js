@@ -44,7 +44,7 @@ const NotificationPanel = ({ notifications, onMarkAsRead, onClearAll }) => {
             </span>
           )}
         </h3>
-        {notifications.length > 0 && (
+        {onClearAll && notifications.length > 0 && (
           <button
             onClick={() => { onClearAll(); setPage(1); }}
             className="flex items-center gap-1 text-xs text-red-500 hover:text-red-700 transition-colors font-medium"

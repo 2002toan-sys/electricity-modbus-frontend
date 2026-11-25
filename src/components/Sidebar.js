@@ -8,12 +8,15 @@ import {
   ChevronRight,
   X,
   Building2,
+  BookOpen,
   Settings,
 } from 'lucide-react';
+import GUIDE_NAVIGATION from '../utils/guideNavigation';
 
 const NAV_ITEMS = [
-  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { id: 'dashboard', label: 'Sơ đồ', icon: LayoutDashboard },
   { id: 'history', label: 'Lịch sử', icon: History },
+  { id: 'guide', label: 'Hướng dẫn', icon: BookOpen },
   { id: 'notifications', label: 'Thông báo', icon: Bell },
   { id: 'settings', label: 'Cài đặt', icon: Settings, adminOnly: true },
 ];
@@ -108,43 +111,85 @@ const Sidebar = ({
         </div>
 
         {/* ===== NAVIGATION TABS ===== */}
-        <nav className="flex-1 px-2 py-3 space-y-0.5 overflow-y-auto">
+        <nav className="relative flex-1 space-y-0.5 overflow-y-auto px-2 py-3">
           {navItems.map(({ id, label, icon: Icon }) => {
             const isActive = activePage === id;
             const showBadge = id === 'notifications' && unreadCount > 0;
             return (
-              <button
-                key={id}
-                onClick={() => {
-                  onNavigate(id);
-                  if (isMobileDrawer) onMobileClose();
-                }}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl font-medium transition-all duration-150 group
-                  ${isActive
-                    ? 'bg-blue-50 text-blue-700 shadow-sm'
-                    : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'
-                  }
-                  ${!showLabels ? 'justify-center' : ''}
-                `}
-                title={!showLabels ? label : undefined}
-              >
-                <div className="relative flex-shrink-0">
-                  <Icon className={`w-5 h-5 ${isActive ? 'text-blue-600' : 'text-slate-400 group-hover:text-slate-600'}`} />
-                  {showBadge && !showLabels && (
-                    <span className="absolute -top-1 -right-1 w-2 h-2 bg-red-500 rounded-full" />
-                  )}
-                </div>
-                {showLabels && (
-                  <>
-                    <span className="flex-1 text-left text-sm">{label}</span>
-                    {showBadge && (
-                      <span className="flex-shrink-0 bg-red-500 text-white text-xs font-bold px-1.5 py-0.5 rounded-full min-w-[1.25rem] text-center">
-                        {unreadCount > 99 ? '99+' : unreadCount}
-                      </span>
+              <div key={id} className="group relative">
+                <button
+                  onClick={() => {
+                    onNavigate(id);
+                    if (isMobileDrawer) onMobileClose();
+                  }}
+                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl font-medium transition-all duration-150
+                    ${isActive
+                      ? 'bg-blue-50 text-blue-700 shadow-sm'
+                      : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'
+                    }
+                    ${!showLabels ? 'justify-center' : ''}
+                  `}
+                  title={!showLabels ? label : undefined}
+                  aria-haspopup={id === 'guide' ? 'true' : undefined}
+                >
+                  <div className="relative flex-shrink-0">
+                    <Icon className={`w-5 h-5 ${isActive ? 'text-blue-600' : 'text-slate-400 group-hover:text-slate-600'}`} />
+                    {showBadge && !showLabels && (
+                      <span className="absolute -top-1 -right-1 w-2 h-2 bg-red-500 rounded-full" />
                     )}
-                  </>
+                  </div>
+                  {showLabels && (
+                    <>
+                      <span className="flex-1 text-left text-sm">{label}</span>
+                      {showBadge && (
+                        <span className="flex-shrink-0 bg-red-500 text-white text-xs font-bold px-1.5 py-0.5 rounded-full min-w-[1.25rem] text-center">
+                          {unreadCount > 99 ? '99+' : unreadCount}
+                        </span>
+                      )}
+                    </>
+                  )}
+                </button>
+                {id === 'guide' && showLabels && (
+                  <div className="grid grid-rows-[0fr] opacity-0 transition-all duration-200 group-hover:grid-rows-[1fr] group-hover:opacity-100 group-focus-within:grid-rows-[1fr] group-focus-within:opacity-100">
+                    <nav
+                      aria-label="Điều hướng hướng dẫn"
+                      className="min-h-0 overflow-hidden"
+                    >
+                      <div className="ml-5 mt-1 space-y-1 border-l border-slate-200 pl-2">
+                        {GUIDE_NAVIGATION.map(({ id: sectionId, label: sectionLabel, level }) => (
+                          <a
+                            key={sectionId}
+                            href={`#${sectionId}`}
+                            onClick={(event) => {
+                              event.preventDefault();
+                              onNavigate('guide');
+                              window.history.replaceState(
+                                null,
+                                '',
+                                `${window.location.pathname}${window.location.search}#${sectionId}`
+                              );
+                              if (activePage === 'guide') {
+                                document.getElementById(sectionId)?.scrollIntoView?.({
+                                  behavior: 'smooth',
+                                  block: 'start',
+                                });
+                              }
+                              if (isMobileDrawer) onMobileClose();
+                            }}
+                            className={`block rounded-lg px-2.5 py-1.5 text-xs transition-colors hover:bg-blue-50 hover:text-blue-800 ${
+                              level === 2
+                                ? 'bg-slate-50 font-semibold text-slate-800'
+                                : 'ml-2 text-slate-600'
+                            }`}
+                          >
+                            {sectionLabel}
+                          </a>
+                        ))}
+                      </div>
+                    </nav>
+                  </div>
                 )}
-              </button>
+              </div>
             );
           })}
         </nav>

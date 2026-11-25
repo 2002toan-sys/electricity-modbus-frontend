@@ -9,17 +9,15 @@ import NotificationPanel from './components/NotificationPanel';
 import Sidebar from './components/Sidebar';
 import DashboardPage from './components/DashboardPage';
 import HistoryPage from './components/HistoryPage';
+import GuidePage from './components/GuidePage';
 import SettingsPage from './components/SettingsPage';
 import ChangePasswordPage from './components/ChangePasswordPage';
+import { socketUrl } from './config/runtime';
 
 const api = realApi;
 
 function getSavedUser() {
   try {
-    if (!sessionStorage.getItem('accessToken')) {
-      localStorage.removeItem('user');
-      return null;
-    }
     const savedUser = localStorage.getItem('user');
     return savedUser ? JSON.parse(savedUser) : null;
   } catch (error) {
@@ -32,9 +30,8 @@ function getSavedUser() {
 // ========================= Component chính =========================
 function App() {
   const [user, setUser] = useState(getSavedUser);
-  const [authChecking, setAuthChecking] = useState(() => (
-    Boolean(sessionStorage.getItem('accessToken') && localStorage.getItem('user'))
-  ));
+  const [authChecking, setAuthChecking] = useState(true);
+  const [authInitialized, setAuthInitialized] = useState(false);
   const [authCheckFailed, setAuthCheckFailed] = useState(false);
   const [authCheckError, setAuthCheckError] = useState('');
   const [authRetry, setAuthRetry] = useState(0);
@@ -59,6 +56,36 @@ function App() {
   useEffect(() => { activePageRef.current = activePage; }, [activePage]);
 
   useEffect(() => {
+    let active = true;
+    const restoreSession = async () => {
+      try {
+        const session = await api.refreshSession();
+        if (!active) return;
+        if (session?.user) {
+          localStorage.setItem('user', JSON.stringify(session.user));
+          setUser(session.user);
+        } else {
+          localStorage.removeItem('user');
+          setUser(null);
+        }
+      } catch (error) {
+        if (!active) return;
+        console.error('Unable to restore session:', error);
+        localStorage.removeItem('user');
+        setUser(null);
+      } finally {
+        if (active) setAuthInitialized(true);
+      }
+    };
+
+    restoreSession();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!authInitialized) return undefined;
     if (!user) {
       setAuthChecking(false);
       setAuthCheckFailed(false);
@@ -75,14 +102,20 @@ function App() {
       verificationInProgress = true;
 
       try {
+        const previousToken = api.getAccessToken();
         const result = await api.verifyToken();
         if (!active) return;
 
         if (!result.authenticated) {
-          sessionStorage.removeItem('accessToken');
+          api.clearAccessToken();
           localStorage.removeItem('user');
           setUser(null);
           return;
+        }
+
+        const currentToken = api.getAccessToken();
+        if (currentToken && currentToken !== previousToken && wsRef.current?.connected) {
+          wsRef.current.emit('auth-refresh', currentToken);
         }
 
         setUser((currentUser) => {
@@ -117,13 +150,15 @@ function App() {
     verifyToken();
     const intervalId = window.setInterval(verifyToken, 30000);
     window.addEventListener('focus', handleWindowFocus);
+    document.addEventListener('visibilitychange', handleWindowFocus);
 
     return () => {
       active = false;
       window.clearInterval(intervalId);
       window.removeEventListener('focus', handleWindowFocus);
+      document.removeEventListener('visibilitychange', handleWindowFocus);
     };
-  }, [user, authRetry]);
+  }, [user, authRetry, authInitialized]);
 
   useEffect(() => {
     if (!user || authChecking || authCheckFailed) return undefined;
@@ -136,7 +171,7 @@ function App() {
       lastActivitySignalRef.current = now;
       api.recordActivity().then((authenticated) => {
         if (!authenticated) {
-          sessionStorage.removeItem('accessToken');
+          api.clearAccessToken();
           localStorage.removeItem('user');
           setUser(null);
           setRooms([]);
@@ -144,7 +179,7 @@ function App() {
           return;
         }
         if (wsRef.current) {
-          wsRef.current.emit('auth-refresh', sessionStorage.getItem('accessToken'));
+          wsRef.current.emit('auth-refresh', api.getAccessToken());
         }
       }).catch((error) => {
         console.error('Unable to record user activity:', error);
@@ -212,7 +247,7 @@ function App() {
   const handleLogout = async () => {
     await api.logout();
     localStorage.removeItem('user');
-    sessionStorage.removeItem('accessToken');
+    api.clearAccessToken();
     setUser(null);
     setRooms([]);
     setNotifications([]);
@@ -226,13 +261,11 @@ function App() {
   useEffect(() => {
     if (!user || authChecking || authCheckFailed) return;
 
+    let active = true;
     // ---- Real Socket.IO ----
-    const apiBase = window._env_?.REACT_APP_API_BASE || process.env.REACT_APP_API_BASE;
-    const socketBaseUrl = window._env_?.REACT_APP_SOCKET_URL || process.env.REACT_APP_SOCKET_URL || (apiBase ? apiBase.replace('/api', '') : 'http://localhost:3000');
-
-    const socket = io(socketBaseUrl, {
+    const socket = io(socketUrl, {
       path: '/socket.io/',
-      auth: (callback) => callback({ token: sessionStorage.getItem('accessToken') }),
+      auth: (callback) => callback({ token: api.getAccessToken() }),
       reconnection: true,
       reconnectionDelay: 1000,
       reconnectionDelayMax: 5000,
@@ -309,9 +342,28 @@ function App() {
       });
     });
 
-    socket.on('disconnect', () => {
+    socket.on('disconnect', (reason) => {
       console.log('Socket.IO disconnected');
       setConnected(false);
+
+      if (reason !== 'io server disconnect') return;
+
+      api.refreshSession().then((session) => {
+        if (!active) return;
+        if (!session) {
+          api.clearAccessToken();
+          localStorage.removeItem('user');
+          setUser(null);
+          setRooms([]);
+          setNotifications([]);
+          return;
+        }
+        localStorage.setItem('user', JSON.stringify(session.user));
+        setUser(session.user);
+        socket.connect();
+      }).catch((error) => {
+        console.error('Unable to restore the WebSocket session:', error);
+      });
     });
 
     socket.on('reconnect', () => {
@@ -325,7 +377,11 @@ function App() {
     });
 
     wsRef.current = socket;
-    return () => socket.close();
+    return () => {
+      active = false;
+      socket.close();
+      if (wsRef.current === socket) wsRef.current = null;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, authChecking, authCheckFailed, updatePlcStatuses]);
 
@@ -426,9 +482,6 @@ function App() {
   const allPlcsConnected = Object.values(plcStatuses).length > 0 &&
     Object.values(plcStatuses).every(Boolean);
 
-  // ===== Chưa đăng nhập =====
-  if (!user) return <Login onLoginSuccess={handleLoginSuccess} />;
-
   if (authChecking || authCheckFailed) {
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-4">
@@ -466,6 +519,9 @@ function App() {
       </div>
     );
   }
+
+  // ===== Chưa đăng nhập =====
+  if (!user) return <Login onLoginSuccess={handleLoginSuccess} />;
 
   // ===== Loading =====
   if (loading) {
@@ -526,6 +582,7 @@ function App() {
             <DashboardPage
               rooms={rooms}
               floors={floors}
+              canControlMainRelay={user?.role === 'admin'}
               onToggleMain={toggleMainRelay}
               onToggleSub={toggleSubRelay}
               onRefresh={handleManualRefresh}
@@ -533,7 +590,11 @@ function App() {
           )}
 
           {activePage === 'history' && (
-            <HistoryPage rooms={rooms} />
+            <HistoryPage />
+          )}
+
+          {activePage === 'guide' && (
+            <GuidePage />
           )}
 
           {activePage === 'notifications' && (
@@ -542,7 +603,7 @@ function App() {
                 <NotificationPanel
                   notifications={notifications}
                   onMarkAsRead={markAsRead}
-                  onClearAll={clearAllNotifications}
+                  onClearAll={user?.role === 'admin' ? clearAllNotifications : undefined}
                 />
               </div>
             </div>

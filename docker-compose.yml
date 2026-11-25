@@ -1,7 +1,7 @@
 services:
   modbus-frontend:
     # Image name on Docker Hub
-    image: nguyenvietanh10326/hotel-modbus-frontend:v11
+    image: nguyenvietanh10326/hotel-modbus-frontend:v11.8
     
     # Allows local building if the image is not found on Hub or for development
     build: 

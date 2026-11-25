@@ -1,12 +1,19 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { io } from 'socket.io-client';
 import App from './App';
 import api from './services/api';
+
+let socketHandlers;
+let socket;
 
 jest.mock('./services/api', () => ({
   __esModule: true,
   default: {
     verifyToken: jest.fn(),
+    refreshSession: jest.fn(),
+    getAccessToken: jest.fn(),
+    setAccessToken: jest.fn(),
+    clearAccessToken: jest.fn(),
     recordActivity: jest.fn(),
     getPlcStatus: jest.fn(),
     getNotifications: jest.fn(),
@@ -39,14 +46,28 @@ jest.mock('socket.io-client', () => ({
 beforeEach(() => {
   localStorage.clear();
   jest.clearAllMocks();
+  socketHandlers = {};
+  socket = {
+    connected: true,
+    on: jest.fn((event, handler) => {
+      socketHandlers[event] = handler;
+    }),
+    emit: jest.fn(),
+    connect: jest.fn(),
+    close: jest.fn(),
+  };
+  api.getAccessToken.mockReturnValue(null);
+  api.refreshSession.mockResolvedValue({
+    accessToken: 'restored-token',
+    user: { username: 'admin', role: 'admin' },
+  });
   api.getRoomStates.mockResolvedValue([]);
   api.getNotifications.mockResolvedValue([]);
   api.getPlcStatus.mockResolvedValue({ data: {} });
-  io.mockReturnValue({ on: jest.fn(), close: jest.fn() });
+  io.mockReturnValue(socket);
 });
 
 test('does not open protected pages before checking and logs out on an expired token', async () => {
-  sessionStorage.setItem('accessToken', 'test-token');
   localStorage.setItem('user', JSON.stringify({ username: 'admin', role: 'admin' }));
   let resolveVerification;
   api.verifyToken.mockReturnValue(new Promise((resolve) => {
@@ -62,13 +83,12 @@ test('does not open protected pages before checking and logs out on an expired t
 
   expect(await screen.findByText('Login screen')).toBeVisible();
   await waitFor(() => expect(localStorage.getItem('user')).toBeNull());
-  expect(sessionStorage.getItem('accessToken')).toBeNull();
+  expect(api.clearAccessToken).toHaveBeenCalled();
   expect(api.getRoomStates).not.toHaveBeenCalled();
   expect(api.getNotifications).not.toHaveBeenCalled();
 });
 
 test('logs out immediately when activity reports an expired idle token', async () => {
-  sessionStorage.setItem('accessToken', 'test-token');
   localStorage.setItem('user', JSON.stringify({ username: 'admin', role: 'admin' }));
   api.verifyToken.mockResolvedValue({
     authenticated: true,
@@ -85,8 +105,26 @@ test('logs out immediately when activity reports an expired idle token', async (
   expect(localStorage.getItem('user')).toBeNull();
 });
 
+test('refreshes auth and reconnects when the server disconnects an expired socket', async () => {
+  localStorage.setItem('user', JSON.stringify({ username: 'admin', role: 'admin' }));
+  api.verifyToken.mockResolvedValue({
+    authenticated: true,
+    user: { username: 'admin', role: 'admin' },
+  });
+
+  render(<App />);
+  await waitFor(() => expect(io).toHaveBeenCalled());
+  await waitFor(() => expect(socketHandlers.disconnect).toBeDefined());
+
+  await act(async () => {
+    socketHandlers.disconnect('io server disconnect');
+  });
+
+  await waitFor(() => expect(socket.connect).toHaveBeenCalledTimes(1));
+  expect(api.refreshSession).toHaveBeenCalledTimes(2);
+});
+
 test('keeps API rooms hidden from the frontend while showing configured rooms', async () => {
-  sessionStorage.setItem('accessToken', 'test-token');
   localStorage.setItem('user', JSON.stringify({ username: 'admin', role: 'admin' }));
   api.verifyToken.mockResolvedValue({
     authenticated: true,

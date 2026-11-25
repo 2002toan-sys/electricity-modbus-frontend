@@ -1,6 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { Lock, User, AlertCircle, PowerIcon } from 'lucide-react';
-const API_BASE = window._env_?.REACT_APP_API_BASE || process.env.REACT_APP_API_BASE || 'http://localhost:3000/api';
+import api from './services/api';
+import { apiBase } from './config/runtime';
+
+const API_BASE = apiBase;
+const AUTH_BASE = `${API_BASE.replace(/\/api\/?$/, '')}/api/auth`;
 
 function Login({ onLoginSuccess }) {
   const [username, setUsername] = useState('');
@@ -35,9 +39,13 @@ function Login({ onLoginSuccess }) {
     setError('');
 
     try {
-      const response = await fetch(`${API_BASE}/auth/login`, {
+      const response = await fetch(`${AUTH_BASE}/login`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRF-Protection': '1',
+        },
+        credentials: 'include',
         body: JSON.stringify({ username, password }),
       });
       const data = await response.json();
@@ -53,7 +61,7 @@ function Login({ onLoginSuccess }) {
         localStorage.removeItem('savedCredentials');
       }
 
-      sessionStorage.setItem('accessToken', data.accessToken);
+      api.setAccessToken(data.accessToken);
       localStorage.setItem('user', JSON.stringify(data.user));
       onLoginSuccess(data.user);
     } catch (error) {

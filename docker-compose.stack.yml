@@ -1,12 +1,19 @@
 services:
   backend:
-    image: nguyenvietanh10326/hotel-modbus-backend:v11
+    image: nguyenvietanh10326/hotel-modbus-backend:v11.6
     ports:
       - "3000:3000"
     restart: unless-stopped
     environment:
       NODE_ENV: ${NODE_ENV}
       JWT_SECRET: ${JWT_SECRET}
+      JWT_ISSUER: ${JWT_ISSUER}
+      JWT_AUDIENCE: ${JWT_AUDIENCE}
+      ACCESS_TOKEN_TTL_SECONDS: ${ACCESS_TOKEN_TTL_SECONDS}
+      REFRESH_TOKEN_COOKIE_NAME: ${REFRESH_TOKEN_COOKIE_NAME}
+      REFRESH_TOKEN_COOKIE_SECURE: ${REFRESH_TOKEN_COOKIE_SECURE}
+      INITIAL_ADMIN_USERNAME: ${INITIAL_ADMIN_USERNAME}
+      INITIAL_ADMIN_PASSWORD: ${INITIAL_ADMIN_PASSWORD}
       API_KEY: ${API_KEY}
       LOG_TO_FILE: ${LOG_TO_FILE}
       LOG_LEVEL: ${LOG_LEVEL}
@@ -21,7 +28,7 @@ services:
         condition: any
 
   frontend:
-    image: nguyenvietanh10326/hotel-modbus-frontend:v11
+    image: nguyenvietanh10326/hotel-modbus-frontend:v11.8
     ports:
       - "3001:3001"
     restart: unless-stopped

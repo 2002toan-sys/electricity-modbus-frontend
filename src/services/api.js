@@ -1,18 +1,76 @@
-const API_BASE = window._env_?.REACT_APP_API_BASE || process.env.REACT_APP_API_BASE || 'http://localhost:3000/api';
+import { apiBase } from '../config/runtime';
+
+const API_BASE = apiBase;
+const AUTH_BASE = `${API_BASE.replace(/\/api\/?$/, '')}/api/auth`;
+const CSRF_HEADERS = {
+  'Content-Type': 'application/json',
+  'X-CSRF-Protection': '1',
+};
+let refreshRequest = null;
+let accessToken = null;
 
 const api = {
+  getAccessToken() {
+    return accessToken;
+  },
+
+  setAccessToken(token) {
+    accessToken = token;
+  },
+
+  clearAccessToken() {
+    accessToken = null;
+  },
+
   getHeaders() {
-    const token = sessionStorage.getItem('accessToken');
     return {
       'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {})
+      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {})
     };
   },
 
   handleAuthError() {
-    sessionStorage.removeItem('accessToken');
+    this.clearAccessToken();
     localStorage.removeItem('user');
     window.location.reload();
+  },
+
+  getAccessTokenExpirationTime() {
+    const encodedPayload = accessToken?.split('.')[1];
+    if (!encodedPayload) return null;
+    try {
+      const base64 = encodedPayload.replace(/-/g, '+').replace(/_/g, '/');
+      const payload = JSON.parse(window.atob(base64.padEnd(Math.ceil(base64.length / 4) * 4, '=')));
+      return Number.isInteger(payload.exp) ? payload.exp * 1000 : null;
+    } catch {
+      return null;
+    }
+  },
+
+  async refreshSession() {
+    if (refreshRequest) return refreshRequest;
+    refreshRequest = (async () => {
+      try {
+        const response = await fetch(`${AUTH_BASE}/refresh`, {
+          method: 'POST',
+          headers: CSRF_HEADERS,
+          credentials: 'include',
+        });
+        if (response.status === 401) {
+          this.clearAccessToken();
+          return null;
+        }
+        const result = await response.json();
+        if (!response.ok || !result.accessToken || !result.user?.username) {
+          throw new Error(result.error || 'Không thể khôi phục phiên đăng nhập.');
+        }
+        this.setAccessToken(result.accessToken);
+        return result;
+      } finally {
+        refreshRequest = null;
+      }
+    })();
+    return refreshRequest;
   },
 
   async getRoomStates() {
@@ -72,23 +130,39 @@ const api = {
 
   async logout() {
     try {
-      await fetch(`${API_BASE}/auth/logout`, {
+      await fetch(`${AUTH_BASE}/logout`, {
         method: 'POST',
-        headers: this.getHeaders(),
+        headers: { ...this.getHeaders(), 'X-CSRF-Protection': '1' },
+        credentials: 'include',
       });
     } catch (error) {
       console.error('Logout error:', error);
     } finally {
-      sessionStorage.removeItem('accessToken');
+      this.clearAccessToken();
     }
   },
 
   async verifyToken() {
-    const response = await fetch(`${API_BASE}/auth/verify`, {
+    const expiresAt = this.getAccessTokenExpirationTime();
+    if (expiresAt && expiresAt - Date.now() <= 2 * 60 * 1000) {
+      const session = await this.refreshSession();
+      if (!session) return { authenticated: false };
+    }
+
+    let response = await fetch(`${AUTH_BASE}/me`, {
       headers: this.getHeaders(),
+      credentials: 'include',
     });
 
-    if (response.status === 401) return { authenticated: false };
+    if (response.status === 401) {
+      const session = await this.refreshSession();
+      if (!session) return { authenticated: false };
+      response = await fetch(`${AUTH_BASE}/me`, {
+        headers: this.getHeaders(),
+        credentials: 'include',
+      });
+      if (response.status === 401) return { authenticated: false };
+    }
 
     const contentType = response.headers.get('content-type') || '';
     if (!contentType.includes('application/json')) {
@@ -106,18 +180,23 @@ const api = {
   },
 
   async recordActivity() {
-    const response = await fetch(`${API_BASE}/auth/activity`, {
-      method: 'POST',
-      headers: this.getHeaders(),
-    });
-    if (response.status === 401) return false;
-    if (!response.ok) {
-      throw new Error(`Không thể gia hạn token hoạt động (HTTP ${response.status}).`);
-    }
-    const result = await response.json();
-    if (!result.accessToken) throw new Error('Backend không trả về access token mới.');
-    sessionStorage.setItem('accessToken', result.accessToken);
+    const expiresAt = this.getAccessTokenExpirationTime();
+    if (expiresAt && expiresAt - Date.now() > 2 * 60 * 1000) return true;
+    const session = await this.refreshSession();
+    if (!session) return false;
     return true;
+  },
+
+  async logoutAll() {
+    try {
+      await fetch(`${AUTH_BASE}/logout-all`, {
+        method: 'POST',
+        headers: { ...this.getHeaders(), 'X-CSRF-Protection': '1' },
+        credentials: 'include',
+      });
+    } finally {
+      this.clearAccessToken();
+    }
   },
 
   async getNotifications() {
@@ -222,10 +301,14 @@ const api = {
     }
   },
 
-  async requestRoomConfig(path, { method = 'GET', body } = {}) {
+  async requestRoomConfig(path, { method = 'GET', body, csrf = false, credentials } = {}) {
     const response = await fetch(`${API_BASE}${path}`, {
       method,
-      headers: this.getHeaders(),
+      headers: {
+        ...this.getHeaders(),
+        ...(csrf ? { 'X-CSRF-Protection': '1' } : {}),
+      },
+      ...(credentials ? { credentials } : {}),
       ...(body ? { body: JSON.stringify(body) } : {}),
     });
 
@@ -330,7 +413,12 @@ const api = {
   },
 
   async changePassword(passwords) {
-    return this.requestRoomConfig('/auth/change-password', { method: 'POST', body: passwords });
+    return this.requestRoomConfig('/auth/change-password', {
+      method: 'POST',
+      body: passwords,
+      csrf: true,
+      credentials: 'include',
+    });
   },
 };
 

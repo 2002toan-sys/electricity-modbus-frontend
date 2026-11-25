@@ -3,3 +3,6 @@
 // expect(element).toHaveTextContent(/react/i)
 // learn more: https://github.com/testing-library/jest-dom
 import '@testing-library/jest-dom';
+
+process.env.REACT_APP_API_BASE = 'http://localhost:3000/api';
+process.env.REACT_APP_SOCKET_URL = 'http://localhost:3000';
